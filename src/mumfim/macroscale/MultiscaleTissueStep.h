@@ -40,19 +40,9 @@ namespace mumfim
     RVECoupling fo_cplg;
     int nm_rves;
     StochasticFieldMap stochastic_field_map;
-    // int nm_rve_rgns;
+    std::string pt_file_;
+
     // multiscale coupling communication stuff
-    enum PATTERN
-    {
-      SEND = 0,
-      RECV = 1,
-      SEND_INIT = 2,
-      NUM_PATTERNS = 3
-    };
-    // size_t rve_ptrns[NUM_PATTERNS];
-    // size_t snd_ptrns[MICROSCALE_TYPE_COUNT];
-    // size_t ini_ptrns[MICROSCALE_TYPE_COUNT];
-    // size_t rcv_ptrns[MICROSCALE_TYPE_COUNT];
     size_t M2m_id;
     size_t m2M_id;
     std::vector<std::string> rve_dirs;

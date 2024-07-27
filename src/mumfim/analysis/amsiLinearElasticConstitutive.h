@@ -15,6 +15,7 @@ namespace amsi
     void atPoint(apf::Vector3 const &p,
                  double w,
                  double dV);
+    bool includesBodyForces() override { return true; }
   private:
     apf::FieldShape * fs;
     apf::DynamicMatrix C;

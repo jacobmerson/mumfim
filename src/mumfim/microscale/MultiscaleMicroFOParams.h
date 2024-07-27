@@ -41,6 +41,8 @@ namespace mumfim
     ORIENTATION_AXIS_X,
     ORIENTATION_AXIS_Y,
     ORIENTATION_AXIS_Z,
+    DAMAGE_FACTOR,
+    FAILURE_STRESS,
     NUM_PARAM_FIELDS
   };
   enum micro_solver_fields
@@ -95,7 +97,8 @@ namespace mumfim
     // 6 components of symmetric stress +
     // 3 components of Q + 
     // 36 components of stiffness (stress and strain symmetric)
-    double data[6 + 3 + 36]; 
+    // 1 component of failure status
+    double data[6 + 3 + 36 + 1];
   };
   // data communicated at each step
   struct micro_fo_step_result

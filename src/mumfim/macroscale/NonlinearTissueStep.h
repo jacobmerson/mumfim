@@ -29,7 +29,6 @@ namespace mumfim
     amsi::XpYFunc * xpyfnc;
     std::map<apf::ModelEntity*, std::unique_ptr<amsi::ElementalSystem>> constitutives;
     std::vector<std::unique_ptr<StiffnessVariation>> stf_vrtn_cnst;
-    apf::Field * delta_u;
     apf::Field* accepted_displacements;
     apf::Field * current_coords;  // coordinates in current config
     apf::Field * strs;
@@ -53,13 +52,13 @@ namespace mumfim
     NonlinearTissueStep(apf::Mesh* mesh, const mt::CategoryNode& analysis_case,
                     MPI_Comm cm = AMSI_COMM_SCALE);
     virtual ~NonlinearTissueStep();
-    void computeInitGuess(amsi::LAS* las);
-    void step();
-    void iter();
+    void computeInitGuess(amsi::LAS* las) override;
+    void step() override;
+    void iter() override;
     void Assemble(amsi::LAS* las) override;
     void UpdateDOFs(const double* sol) override;
-    virtual void preRun() {};
-    void AcceptDOFs(){
+    virtual void preRun() override {};
+    void AcceptDOFs() override {
       apf::copyData(accepted_displacements, getUField());
     }
 

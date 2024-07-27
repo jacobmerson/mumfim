@@ -16,7 +16,6 @@ namespace amsi
     dof_numbers.resize(ncomponents*nenodes);
     apf::NewArray<int> new_array_numbering(ncomponents*nenodes);
     apf::getElementNumbers(numbering, mesh_entity, new_array_numbering);
-
     values.resize(ncomponents*nenodes);
     apf::NewArray<double> new_array_data(ncomponents*nenodes);
     e->getElementNodeData(new_array_data);

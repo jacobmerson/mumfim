@@ -2,6 +2,7 @@
 
 #include <amsiControlService.h>  // amsi
 #include <amsiDetectOscillation.h>
+#include <fmt/format.h>
 #include <model_traits/AssociatedModelTraits.h>
 
 #include <map>
@@ -20,6 +21,7 @@ namespace mumfim
     int alignment_num_bins;
     std::string alignment_filename;
   };
+
   static StochasticFieldData read_stochastic_field(
       const mt::AssociatedCategoryNode & stochastic_field)
   {
@@ -74,10 +76,12 @@ namespace mumfim
         .alignment_filename = (*alignment_filename)(),
     };
   }
-  MultiscaleTissueStep::MultiscaleTissueStep(apf::Mesh * mesh,
-                                     const mt::CategoryNode & analysis_case,
-                                     MPI_Comm cm,
-                                     const amsi::Multiscale & amsi_multiscale)
+
+  MultiscaleTissueStep::MultiscaleTissueStep(
+      apf::Mesh * mesh,
+      const mt::CategoryNode & analysis_case,
+      MPI_Comm cm,
+      const amsi::Multiscale & amsi_multiscale)
       : NonlinearTissueStep(mesh, analysis_case, cm)
       , mltscl(nullptr)
       , crt_rve(apf::createIPField(apf_mesh, "micro_rve_type", apf::SCALAR, 1))
@@ -94,29 +98,42 @@ namespace mumfim
       , nm_rves(0)
       , multiscale_(amsi_multiscale)
   {
-    const mt::DimIdGeometry whole_model{9,1};
-    const auto minimum_stiffness = std::invoke([&,this]()->double {
-          const auto * multiscale_model = mt::GetCategoryByType(mt::GetCategoryByType(problem_definition.associated->Find(whole_model), "material model"),"multiscale model");
-          const auto* minimum_stiffness_mt = mt::GetCategoryModelTraitByType<mt::ScalarMT>(multiscale_model,"minimum stiffness");
-          if(minimum_stiffness_mt != nullptr){
+    const mt::DimIdGeometry whole_model{9, 1};
+    const auto minimum_stiffness = std::invoke(
+        [&, this]() -> double
+        {
+          const auto * multiscale_model = mt::GetCategoryByType(
+              mt::GetCategoryByType(
+                  problem_definition.associated->Find(whole_model),
+                  "material model"),
+              "multiscale model");
+          const auto * minimum_stiffness_mt =
+              mt::GetCategoryModelTraitByType<mt::ScalarMT>(
+                  multiscale_model, "minimum stiffness");
+          if (minimum_stiffness_mt != nullptr)
+          {
             return (*minimum_stiffness_mt)();
           }
-          else {
+          else
+          {
             return -1;
           }
-
         });
 
-    auto * microscale_stress = apf::createIPField(apf_mesh, "microscale_stress", apf::MATRIX, 1);
-    auto* microscale_strain = apf::createIPField(apf_mesh, "microscale_strain", apf::MATRIX, 1);
-    auto* microscale_dfm_grd = apf::createIPField(apf_mesh, "microscale_F", apf::MATRIX, 1);
+    auto * microscale_stress =
+        apf::createIPField(apf_mesh, "microscale_stress", apf::MATRIX, 1);
+    auto * microscale_strain =
+        apf::createIPField(apf_mesh, "microscale_strain", apf::MATRIX, 1);
+    auto * microscale_dfm_grd =
+        apf::createIPField(apf_mesh, "microscale_F", apf::MATRIX, 1);
     apf::zeroField(microscale_stress);
     apf::zeroField(microscale_strain);
     apf::zeroField(microscale_dfm_grd);
     ornt_3D = apf::createIPField(apf_mesh, "ornt_tens_3D", apf::MATRIX, 1);
     ornt_2D = apf::createIPField(apf_mesh, "ornt_tens_2D", apf::MATRIX, 1);
-    mltscl = new ULMultiscaleIntegrator(&fo_cplg, microscale_strain, microscale_stress, apf_primary_field,
-                                        microscale_dfm_grd, apf_primary_numbering, 1,minimum_stiffness);
+    mltscl = new ULMultiscaleIntegrator(
+        &fo_cplg, microscale_strain, microscale_stress, apf_primary_field,
+        microscale_dfm_grd, apf_primary_numbering, 1, minimum_stiffness);
     M2m_id =
         amsi::getRelationID(multiscale_.getMultiscaleManager(),
                             multiscale_.getScaleManager(), "macro", "micro_fo");
@@ -157,6 +174,7 @@ namespace mumfim
       }
     }
   }
+
   MultiscaleTissueStep::~MultiscaleTissueStep()
   {
     delete mltscl;
@@ -166,6 +184,7 @@ namespace mumfim
     apf::destroyField(ornt_3D);
     apf::destroyField(ornt_2D);
   }
+
   void MultiscaleTissueStep::Assemble(amsi::LAS * las)
   {
     computeRVEs();
@@ -186,6 +205,7 @@ namespace mumfim
                      << "start_solve" << std::endl;
 #endif
   }
+
   void MultiscaleTissueStep::computeRVEs()
   {
 #ifdef LOGRUN
@@ -205,6 +225,7 @@ namespace mumfim
                      << "end_rves" << std::endl;
 #endif
   }
+
   void MultiscaleTissueStep::initMicro()
   {
     amsi::ControlService * cs = amsi::ControlService::Instance();
@@ -223,15 +244,19 @@ namespace mumfim
     }
     cs->aSendBroadcast(std::back_inserter(rqsts), M2m_id, &rve_cnts[0],
                        num_rve_tps);
+    cs->aSendBroadcast(std::back_inserter(rqsts), M2m_id, pt_file_.data(),
+                       pt_file_.size() + 1);
     // wait for the sends to complete if we don't do this it can cause
     // a crash on systems without hardware MPI buffers
     MPI_Waitall(rqsts.size(), &rqsts[0], MPI_STATUSES_IGNORE);
   }
+
   void MultiscaleTissueStep::updateMicro()
   {
     updateRVETypes();
     updateRVEExistence();
   }
+
   void MultiscaleTissueStep::updateRVETypes()
   {
     nm_rves = 0;
@@ -251,6 +276,7 @@ namespace mumfim
     }
     apf_mesh->end(it);
   }
+
   MicroscaleType MultiscaleTissueStep::updateRVEType(apf::MeshEntity * me)
   {
     // TODO: Use error estimate as determination of microscale TYPE
@@ -270,6 +296,7 @@ namespace mumfim
         material_model->FindCategoryByType("multiscale model");
     return getMicroscaleType(multiscale_model);
   }
+
   void MultiscaleTissueStep::updateRVEExistence()
   {
     int rank;
@@ -292,6 +319,7 @@ namespace mumfim
     fo_cplg.updateRecv();
     nm_rves += nw_hdrs.size();
   }
+
   void MultiscaleTissueStep::recoverSecondaryVariables(int step)
   {
     fo_cplg.recvRVEStepData();
@@ -356,8 +384,10 @@ namespace mumfim
     if (compute_ornt_2D) apf::synchronize(ornt_2D);
     if (compute_ornt_3D) apf::synchronize(ornt_3D);
   }
-  amsi::ElementalSystem * MultiscaleTissueStep::getIntegrator(apf::MeshEntity * me,
-                                                          int ip)
+
+  amsi::ElementalSystem * MultiscaleTissueStep::getIntegrator(
+      apf::MeshEntity * me,
+      int ip)
   {
     MicroscaleType tp =
         static_cast<MicroscaleType>(apf::getScalar(crt_rve, me, ip));
@@ -369,12 +399,15 @@ namespace mumfim
         return mltscl;
       case MicroscaleType::ISOTROPIC_NEOHOOKEAN:
         return mltscl;
+      case MicroscaleType::TORCH:
+        return mltscl;
       default:
         std::cerr << "Applying a macroscale integrator. We should not expect "
                      "to get here.\n";
         return constitutives[apf_mesh->toModel(me)].get();
     }
   }
+
   void MultiscaleTissueStep::loadRVELibraryInfo()
   {
     apf::MeshEntity * ent;
@@ -463,14 +496,26 @@ namespace mumfim
           rve_dir_cnts.push_back(count);
         }
       }
+      else if (micro_tp == MicroscaleType::TORCH)
+      {
+        const auto * torch_file =
+            mt::GetCategoryModelTraitByType<mt::StringMT>(multiscale_model, "file");
+        if (torch_file == nullptr)
+        {
+          throw mumfim_error(
+              fmt::format("torch material model requires a file (string MT)"));
+        }
+        pt_file_ = torch_file ? (*torch_file)() : "";
+      }
     }
     apf_mesh->end(it);
   }
+
   void MultiscaleTissueStep::getExternalRVEData(apf::MeshEntity * ent,
-                                            micro_fo_header & hdr,
-                                            micro_fo_params & prm,
-                                            micro_fo_solver & slvr,
-                                            micro_fo_int_solver & int_slvr)
+                                                micro_fo_header & hdr,
+                                                micro_fo_params & prm,
+                                                micro_fo_solver & slvr,
+                                                micro_fo_int_solver & int_slvr)
   {
     auto * model_entity = apf_mesh->toModel(ent);
     const auto * pd = problem_definition.associated->Find(
@@ -486,6 +531,26 @@ namespace mumfim
     // FIXME this should be static_cast to underlying type...add utility
     // to_underlying function
     hdr.data[RVE_TYPE] = static_cast<int>(micro_tp);
+
+    // get damage
+    const auto * damage_cat = multiscale_model->FindCategoryByType("damage");
+    if (damage_cat != nullptr)
+    {
+      const auto * damage_factor =
+          mt::GetCategoryModelTraitByType<mt::ScalarMT>(damage_cat,
+                                                        "damage factor");
+      if (damage_factor != nullptr)
+      {
+        prm.data[DAMAGE_FACTOR] = (*damage_factor)();
+      }
+      const auto * failure_stress =
+          mt::GetCategoryModelTraitByType<mt::ScalarMT>(damage_cat,
+                                                        "failure stress");
+      if (failure_stress != nullptr)
+      {
+        prm.data[FAILURE_STRESS] = (*failure_stress)();
+      }
+    }
     if (micro_tp == MicroscaleType::FIBER_ONLY)
     {
       multiscale_model = multiscale_model->FindCategoryByType("fiber only");
@@ -715,10 +780,11 @@ namespace mumfim
         }
         else
         {
-          std::cerr << field_output->GetType()
-                    << " is not a valid field output type. MultiscaleTissueStep "
-                       "and attDefs are out of sync."
-                    << std::endl;
+          std::cerr
+              << field_output->GetType()
+              << " is not a valid field output type. MultiscaleTissueStep "
+                 "and attDefs are out of sync."
+              << std::endl;
           MPI_Abort(AMSI_COMM_WORLD, 1);
         }
       }
@@ -822,10 +888,11 @@ namespace mumfim
       std::abort();
     }
   }
+
   void MultiscaleTissueStep::getInternalRVEData(apf::MeshEntity * rgn,
-                                            micro_fo_header & hdr,
-                                            micro_fo_params &,
-                                            micro_fo_init_data & dat)
+                                                micro_fo_header & hdr,
+                                                micro_fo_params &,
+                                                micro_fo_init_data & dat)
   {
     int idx = getRVEDirectoryIndex(rgn);
     hdr.data[RVE_DIR_TYPE] = idx;
@@ -842,6 +909,7 @@ namespace mumfim
     apf::destroyElement(ce);
     apf::destroyMeshElement(mlm);
   }
+
   int MultiscaleTissueStep::getRVEDirectoryIndex(apf::MeshEntity * ent)
   {
     apf::ModelEntity * gEnt = apf_mesh->toModel(ent);

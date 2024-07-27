@@ -47,6 +47,8 @@ namespace mumfim
     int macro_iter;
     int macro_step;
     bool initial_update;
+
+    std::string pt_file_;
     // funcs
     void initCoupling();
     void initAnalysis();

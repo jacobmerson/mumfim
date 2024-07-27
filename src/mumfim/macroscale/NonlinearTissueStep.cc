@@ -1,6 +1,7 @@
 #include "NonlinearTissueStep.h"
 
 #include <amsiControlService.h>
+#include <amsiLinearElasticConstitutive.h>
 #include <apfFunctions.h>
 #include <apfLabelRegions.h>
 
@@ -30,10 +31,9 @@ namespace mumfim
     apf_primary_field =
         apf::createLagrangeField(apf_mesh, "displacement", apf::VECTOR, 1);
     apf::zeroField(apf_primary_field);
-    delta_u = apf::createLagrangeField(apf_mesh, "displacement_delta",
+    apf_primary_delta_field = apf::createLagrangeField(apf_mesh, "displacement_delta",
                                        apf::VECTOR, 1);
-    apf::zeroField(delta_u);
-    apf_primary_delta_field = delta_u;
+    apf::zeroField(apf_primary_delta_field);
 
     accepted_displacements = apf::createLagrangeField(
         apf_mesh, "accepted_displacement", apf::VECTOR, 1);
@@ -48,7 +48,7 @@ namespace mumfim
     // take the current coordinate field, and subtract increment in displacement
     // to get the coords at the previous increment (this is sorta hacky but it
     // should work)
-    prv_crd_fnc = new amsi::XpYFunc(current_coords, delta_u, 1, -1);
+    prv_crd_fnc = new amsi::XpYFunc(current_coords, apf_primary_delta_field, 1, -1);
     prev_coords =
         apf::createUserField(apf_mesh, "previous_coordinates", apf::VECTOR,
                              apf::getLagrange(1), prv_crd_fnc);
@@ -129,23 +129,19 @@ namespace mumfim
                 apf_primary_field, dfm_grd, current_coords, strs, strn, apf_primary_numbering,
                 (*youngs_modulus)(), (*poisson_ratio)(), 1);
       }
+      else if (continuum_model->GetType() == "linear_elastic")
+      {
+        constitutives[reinterpret_cast<apf::ModelEntity *>(gent)] =
+          std::make_unique<amsi::LinearElasticIntegrator>(apf_primary_field, apf_primary_numbering, 1, (*youngs_modulus)(), (*poisson_ratio)());
+      }
       else if (continuum_model->GetType() == "transverse_isotropic")
       {
         throw mumfim_error("Transverse isotropic material not currently supported");
       }
       else if (continuum_model->GetType() == "pytorch")
       {
-#ifdef MUMFIM_ENABLE_TORCH
-        const auto * model_file = mt::GetCategoryModelTraitByType<mt::StringMT>(
-            continuum_model, "model file");
-        constitutives[reinterpret_cast<apf::ModelEntity *>(gent)] =
-            std::make_unique<
-                UpdatedLagrangianMaterialIntegrator<TorchMaterial>>(
-                TorchMaterial{(*model_file)()}, strn, strs, apf_primary_field,
-                dfm_grd, 1);
-#else
-        throw mumfim_error("MUMFIM was not compiled with PyTorch support");
-#endif
+        // pytorch model without batched support is too slow
+        throw mumfim_error("Pytorch only supported as a microscale model");
       }
       else {
         throw mumfim_error("Invalid continuum model was supplied");
@@ -191,7 +187,7 @@ namespace mumfim
     lt.setSimulationTime(T);
     LinearSolver(&lt, las);
     las->iter();
-    apf::copyData(delta_u, lt.getUField());
+    apf::copyData(apf_primary_delta_field, lt.getUField());
     apf::copyData(apf_primary_field, lt.getUField());
   }
 
@@ -231,16 +227,21 @@ namespace mumfim
     amsi::ApplyVector(apf_primary_numbering, apf_primary_field, sol,
                       first_local_dof, &frwr_op)
         .run();
+
+    std::vector<double> new_solution(num_dofs);
+    amsi::ToArray(apf_primary_numbering, apf_primary_field,
+                  &new_solution[0], first_local_dof, &wr_op)
+        .run();
     std::transform(
-        old_solution.begin(), old_solution.end(), sol, old_solution.begin(),
+        old_solution.begin(), old_solution.end(), new_solution.begin(), old_solution.begin(),
         [](double old_sol, double new_sol) { return new_sol - old_sol; });
 
     amsi::ApplyVector(apf_primary_numbering, apf_primary_delta_field,
-                      old_solution.data(), first_local_dof, &frwr_op)
+                      old_solution.data(), first_local_dof, &wr_op)
         .run();
 
     apf::synchronize(apf_primary_field);
-    apf::synchronize(delta_u);
+    apf::synchronize(apf_primary_delta_field);
   }
 
   amsi::ElementalSystem * NonlinearTissueStep::getIntegrator(

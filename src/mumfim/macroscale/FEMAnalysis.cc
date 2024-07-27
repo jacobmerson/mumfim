@@ -73,8 +73,8 @@ namespace mumfim
       MatAssemblyEnd(petsc_las->GetMatrix(), MAT_FINAL_ASSEMBLY);
 
       Vec rhs = petsc_las->GetVector(); 
-
-      MatMultAdd(petsc_las->GetMatrix(), solution, rhs, residual);
+      VecCopy(rhs, residual);
+      //MatMultAdd(petsc_las->GetMatrix(), solution, rhs, residual);
 
       an->analysis_step_->iter();
       VecRestoreArrayRead(solution, &sol);

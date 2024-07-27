@@ -1,4 +1,5 @@
 #include "MultiscaleRVEAnalysis.h"
+
 #include <amsiCommunicationManager.h>
 #include <amsiControlService.h>
 #include <amsiDetectOscillation.h>
@@ -8,9 +9,11 @@
 #include <apfMeshIterator.h>  // amsi
 #include <gmi.h>
 #include <mumfim/microscale/Verbosity.h>
+
 #include <cassert>
 #include <sstream>
-//#include "BatchedNeohookeanAnalysis.h"
+
+#include "BatchedNeohookeanAnalysis.h"
 #include "FiberNetworkLibrary.h"
 #include "FiberRVEAnalysis.h"
 #include "MultiscaleCoupling.h"
@@ -23,6 +26,7 @@
 namespace mumfim
 {
   MultiscaleRVEAnalysis::~MultiscaleRVEAnalysis() = default;
+
   MultiscaleRVEAnalysis::MultiscaleRVEAnalysis(
       const amsi::Multiscale & amsi_multiscale)
       : recv_ptrn()
@@ -59,11 +63,13 @@ namespace mumfim
         amsi::getRelationID(multiscale_.getMultiscaleManager(),
                             multiscale_.getScaleManager(), "micro_fo", "macro");
   }
+
   void MultiscaleRVEAnalysis::init()
   {
     initCoupling();
     initAnalysis();
   }
+
   void MultiscaleRVEAnalysis::initCoupling()
   {
     auto * cs = multiscale_.getControlService();
@@ -77,6 +83,7 @@ namespace mumfim
     cs->CommPattern_Assemble(send_ptrn);
     cs->CommPattern_Reconcile(send_ptrn);
   }
+
   void MultiscaleRVEAnalysis::initAnalysis()
   {
     int num_rve_tps = 0;
@@ -100,11 +107,17 @@ namespace mumfim
     rve_tp_cnt.resize(num_rve_tps);
     cs->aRecvBroadcast(std::back_inserter(rqsts), M2m_id, &rve_tp_cnt[0],
                        num_rve_tps);
+    int cnt = 0;
+    while ((cnt = cs->aRecvBroadcastSize<char>(M2m_id)) == 0) { }
+    // the string size does not include \0, but the send does include it
+    pt_file_.resize(cnt-1);
+      cs->aRecvBroadcast(std::back_inserter(rqsts), M2m_id, pt_file_.data(), cnt);
     // assert(rqsts.size() == num_rve_tps);
     //  note rather than waiting for all of the communication, we can interleave
     //  creating some of the new structures with some of the communication
     MPI_Waitall(rqsts.size(), &rqsts[0], MPI_STATUSES_IGNORE);
   }
+
   void MultiscaleRVEAnalysis::updateCoupling()
   {
     int rank;
@@ -145,72 +158,100 @@ namespace mumfim
     std::vector<std::shared_ptr<const FiberNetwork>> fiber_networks;
     std::vector<std::shared_ptr<const MicroSolutionStrategy>>
         solution_strategies;
+    // current  batched analysis does not support multiple types of RVEs
+    // later support can be added by storing vector/map of RVE types
+    if (!std::all_of(hdrs.begin(), hdrs.end(), [&](auto & hdr)
+                     { return hdr.data[RVE_TYPE] == hdrs[0].data[RVE_TYPE]; }))
+    {
+      throw mumfim_error(
+          "MultiscaleRVEAnalysis::updateCoupling: "
+          "Inconsistent RVE types. Currently only Single RVE "
+          "type supported with batched analysis mode");
+    }
+    if(hdrs.size() > 0)
+    {
+      analysis_type = static_cast<MicroscaleType>(hdrs[0].data[RVE_TYPE]);
+    }
     for (std::size_t i = 0; i < to_add.size(); ++i)
     {
       micro_fo_header & hdr = hdrs[i];
       micro_fo_params & prm = prms[i];
       micro_fo_solver & slvr_prm = slvr_prms[i];
       micro_fo_int_solver & slvr_int_prm = slvr_int_prms[i];
-      MicroscaleType micro_tp = static_cast<MicroscaleType>(hdr.data[RVE_TYPE]);
-      if(i==0){
-        analysis_type = micro_tp;
-      }
-      else if (analysis_type != micro_tp) {
-        throw mumfim_error("MultiscaleRVEAnalysis::updateCoupling: "
-                           "Inconsistent RVE types. Currently only Single RVE "
-                           "type supported with batched analysis mode");
-      }
-      if (micro_tp == MicroscaleType::FIBER_ONLY)
+      switch (analysis_type)
       {
-        int tp = hdr.data[RVE_DIR_TYPE];
-        int rnd = rand() % rve_tp_cnt[tp];
-        std::string fiber_network_file =
-            rve_tp_dirs[tp] + std::to_string(rnd + 1) + ".txt";
-        auto fiber_network = network_library.load(
-            fiber_network_file, fiber_network_file + ".params", tp, rnd);
-        fiber_networks.push_back(fiber_network);
-        solution_strategies.push_back(
-            serializeSolutionStrategy(slvr_prm, slvr_int_prm));
-        // FIXME This only needs to be done once per Fiber network, and
-        // FIBER_RADIUS should come from network properties, not the multiscale
-        // anlysis...FIBER_RADIUS needs to be removed from the communicated data
-        double pi = 4 * atan(1);
-        double fbr_area = pi * prm.data[FIBER_RADIUS] * prm.data[FIBER_RADIUS];
-        double fbr_vol_frc = prm.data[VOLUME_FRACTION];
-        double scale_factor = calcScaleConversion(
-            fiber_network->getNetworkMesh(), fbr_area, fbr_vol_frc);
-        fiber_network->setScaleConversion(scale_factor);
-      }
-      else if (micro_tp == MicroscaleType::ISOTROPIC_NEOHOOKEAN)
-      {
-        std::cerr
-            << "Currently Neohookean Analysis is not supported in batched mode"
-            << std::endl;
-        //*rve = initNeoHookeanRVEAnalysisFromMultiscale(prm);
-        MPI_Abort(AMSI_COMM_WORLD, EXIT_FAILURE);
-      }
-      // torch model doesn't need special treatment
-      else if(micro_tp == MicroscaleType::TORCH) { }
-      else
-      {
-        std::cerr << "The Microscale/RVE type is not valid" << std::endl;
-        MPI_Abort(AMSI_COMM_WORLD, EXIT_FAILURE);
+        case MicroscaleType::FIBER_ONLY:
+        {
+          int tp = hdr.data[RVE_DIR_TYPE];
+          int rnd = rand() % rve_tp_cnt[tp];
+          std::string fiber_network_file =
+              rve_tp_dirs[tp] + std::to_string(rnd + 1) + ".txt";
+          auto fiber_network = network_library.load(
+              fiber_network_file, fiber_network_file + ".params", tp, rnd);
+          fiber_networks.push_back(fiber_network);
+          solution_strategies.push_back(
+              serializeSolutionStrategy(slvr_prm, slvr_int_prm));
+          // FIXME This only needs to be done once per Fiber network, and
+          // FIBER_RADIUS should come from network properties, not the
+          // multiscale anlysis...FIBER_RADIUS needs to be removed from the
+          // communicated data
+          double pi = 4 * atan(1);
+          double fbr_area =
+              pi * prm.data[FIBER_RADIUS] * prm.data[FIBER_RADIUS];
+          double fbr_vol_frc = prm.data[VOLUME_FRACTION];
+          double scale_factor = calcScaleConversion(
+              fiber_network->getNetworkMesh(), fbr_area, fbr_vol_frc);
+          fiber_network->setScaleConversion(scale_factor);
+          break;
+        }
+        case MicroscaleType::ISOTROPIC_NEOHOOKEAN:
+        case MicroscaleType::TORCH:
+        {
+          // torch and neohookean don't need special handling for each loaded
+          // RVE
+          break;
+        }
+        default:
+        {
+          throw mumfim_error(
+              "MultiscaleRVEAnalysis::updateCoupling: "
+              "selected RVE type is not currently supported");
+        }
       }
     }
     if (to_add.size() > 0)
     {
-       //batched_analysis = BatchedAnalysisType{
-       //    new BatchedFiberRVEAnalysisExplicit<Scalar, LocalOrdinal,
-       //                                        Kokkos::DefaultExecutionSpace>{
-       //        std::move(fiber_networks), std::move(solution_strategies)}};
-
-      batched_analysis=std::make_unique<BatchedTorchAnalysis<Scalar, LocalOrdinal,Kokkos::DefaultHostExecutionSpace>>(
-                                                "/Users/jacobmerson/code/machine_learn_fiber_network_constitutive/kuhl-network.pt",
-                                                fiber_networks.size());
-      //batched_analysis = BatchedAnalysisType{
-      //    new BatchedNeohookeanAnalysis<Scalar, LocalOrdinal,
-      //                                  Kokkos::DefaultExecutionSpace>(
-      //        static_cast<int>(fiber_networks.size()),10000,0.3)};
+      switch (analysis_type)
+      {
+        case MicroscaleType::FIBER_ONLY:
+        {
+          batched_analysis =
+              std::make_unique<BatchedFiberRVEAnalysisExplicit<>>(
+                  std::move(fiber_networks), std::move(solution_strategies));
+          break;
+        }
+        case MicroscaleType::ISOTROPIC_NEOHOOKEAN:
+        {
+          throw mumfim_error("Isotropic Neohookean not implemented");
+          // need to update method for getting microstructural data from
+          // macroscale
+          // batched_analysis = std::make_unique<BatchedNeohookeanAnalysis<>>(
+          //    static_cast<int>(to_add.size()), 10000, 0.3);
+        }
+        case MicroscaleType::TORCH:
+        {
+#ifdef MUMFIM_ENABLE_TORCH
+          batched_analysis =
+              std::make_unique<BatchedTorchAnalysis<>>(pt_file_, to_add.size());
+          std::cout<<fmt::format("Adding Torch Model with Name {} and {} RVEs\n", pt_file_, to_add.size());
+#else
+          throw mumfim_error("Mumfim not compiled with torch support.");
+#endif
+          break;
+        }
+        default:
+          throw mumfim_error("Invalid RVE type");
+      }
     }
       // reset the PCU communictor back to its original state so that
       // our scale wide communications can proceed
@@ -319,79 +360,79 @@ namespace mumfim
                           amsi::mpi_type<micro_fo_result>());
           macro_iter++;
 
-          cs->scaleBroadcast(M2m_id, &step_accepted);
-          step_complete = (step_accepted > 0);
-          if(step_accepted) {
-            batched_analysis->accept();
-          }
+        cs->scaleBroadcast(M2m_id, &step_accepted);
+        step_complete = (step_accepted > 0);
+        if (step_accepted)
+        {
+          batched_analysis->accept();
         }
-        // get the size of the step results vector
-        std::vector<micro_fo_step_result> step_results(hdrs.size());
-        // recover step results and set the step results vector
-        recoverMultiscaleStepResults(
-            orientation_tensor, orientation_tensor_normal,
-            batched_analysis.get(), hdrs, prms, step_results);
-        // communicate the step results back to the macro scale
-        cs->Communicate(send_ptrn, step_results,
-                        amsi::mpi_type<micro_fo_step_result>());
-        macro_iter = 0;
-        macro_step++;
-        cs->scaleBroadcast(M2m_id, &sim_complete);
       }
+      // get the size of the step results vector
+      std::vector<micro_fo_step_result> step_results(hdrs.size());
+      // recover step results and set the step results vector
+      recoverMultiscaleStepResults(
+          orientation_tensor, orientation_tensor_normal, batched_analysis.get(),
+          hdrs, prms, step_results);
+      // communicate the step results back to the macro scale
+      cs->Communicate(send_ptrn, step_results,
+                      amsi::mpi_type<micro_fo_step_result>());
+      macro_iter = 0;
+      macro_step++;
+      cs->scaleBroadcast(M2m_id, &sim_complete);
     }
-    std::unique_ptr<MicroSolutionStrategy> serializeSolutionStrategy(
-        micro_fo_solver & slvr, micro_fo_int_solver & slvr_int)
+  }
+
+  std::unique_ptr<MicroSolutionStrategy> serializeSolutionStrategy(
+      micro_fo_solver & slvr,
+      micro_fo_int_solver & slvr_int)
+  {
+    auto solver_type =
+        static_cast<SolverType>(slvr_int.data[MICRO_SOLVER_TYPE]);
+    auto solution_strategy = std::unique_ptr<MicroSolutionStrategy>{nullptr};
+    if (solver_type == SolverType::Explicit)
     {
-      auto solver_type =
-          static_cast<SolverType>(slvr_int.data[MICRO_SOLVER_TYPE]);
-      auto solution_strategy = std::unique_ptr<MicroSolutionStrategy>{nullptr};
-      if (solver_type == SolverType::Explicit)
-      {
-        solution_strategy.reset(new MicroSolutionStrategyExplicit);
-        auto sse = static_cast<MicroSolutionStrategyExplicit *>(
-            solution_strategy.get());
-        sse->total_time = slvr.data[LOAD_TIME] + slvr.data[HOLD_TIME];
-        sse->load_time = slvr.data[LOAD_TIME];
-        sse->crit_time_scale_factor = slvr.data[CRITICAL_TIME_SCALE_FACTOR];
-        sse->visc_damp_coeff = slvr.data[VISCOUS_DAMPING_FACTOR];
-        sse->energy_check_eps = slvr.data[ENERGY_CHECK_EPSILON];
-        sse->ampType =
-            static_cast<AmplitudeType>(slvr_int.data[AMPLITUDE_TYPE]);
-        sse->print_history_frequency = slvr_int.data[PRINT_HISTORY_FREQUENCY];
-        sse->print_field_frequency = slvr_int.data[PRINT_FIELD_FREQUENCY];
-        sse->print_field_by_num_frames =
-            slvr_int.data[PRINT_FIELD_BY_NUM_FRAMES];
-        sse->serial_gpu_cutoff = slvr_int.data[SERIAL_GPU_CUTOFF];
-      }
-      else if (solver_type == SolverType::Implicit)
-      {
-        solution_strategy.reset(new MicroSolutionStrategy);
-      }
-      else
-      {
-        std::cerr << "Attempting to use a type of solver which has not been "
-                     "implemented yet.\n";
-        std::cerr << "This is most likely configuration error, but it could "
-                     "also happen if there";
-        std::cerr << " is an MPI communication error" << std::endl;
-        std::abort();
-      }
-      // set the combined solver parameters
-      if (solution_strategy != nullptr)
-      {
-        solution_strategy->cnvgTolerance = slvr.data[MICRO_CONVERGENCE_TOL];
-        solution_strategy->slvrTolerance = slvr.data[MICRO_SOLVER_TOL];
-        solution_strategy->oscPrms.maxIterations =
-            slvr_int.data[MAX_MICRO_ITERS];
-        solution_strategy->oscPrms.maxMicroCutAttempts =
-            slvr_int.data[MAX_MICRO_CUT_ATTEMPT];
-        solution_strategy->oscPrms.microAttemptCutFactor =
-            slvr_int.data[MICRO_ATTEMPT_CUT_FACTOR];
-        solution_strategy->oscPrms.oscType =
-            static_cast<amsi::DetectOscillationType>(
-                slvr_int.data[DETECT_OSCILLATION_TYPE]);
-        solution_strategy->oscPrms.prevNormFactor = slvr.data[PREV_ITER_FACTOR];
-      }
-      return solution_strategy;
+      solution_strategy.reset(new MicroSolutionStrategyExplicit);
+      auto sse =
+          static_cast<MicroSolutionStrategyExplicit *>(solution_strategy.get());
+      sse->total_time = slvr.data[LOAD_TIME] + slvr.data[HOLD_TIME];
+      sse->load_time = slvr.data[LOAD_TIME];
+      sse->crit_time_scale_factor = slvr.data[CRITICAL_TIME_SCALE_FACTOR];
+      sse->visc_damp_coeff = slvr.data[VISCOUS_DAMPING_FACTOR];
+      sse->energy_check_eps = slvr.data[ENERGY_CHECK_EPSILON];
+      sse->ampType = static_cast<AmplitudeType>(slvr_int.data[AMPLITUDE_TYPE]);
+      sse->print_history_frequency = slvr_int.data[PRINT_HISTORY_FREQUENCY];
+      sse->print_field_frequency = slvr_int.data[PRINT_FIELD_FREQUENCY];
+      sse->print_field_by_num_frames = slvr_int.data[PRINT_FIELD_BY_NUM_FRAMES];
+      sse->serial_gpu_cutoff = slvr_int.data[SERIAL_GPU_CUTOFF];
     }
-  }  // namespace mumfim
+    else if (solver_type == SolverType::Implicit)
+    {
+      solution_strategy.reset(new MicroSolutionStrategy);
+    }
+    else
+    {
+      std::cerr << "Attempting to use a type of solver which has not been "
+                   "implemented yet.\n";
+      std::cerr << "This is most likely configuration error, but it could "
+                   "also happen if there";
+      std::cerr << " is an MPI communication error" << std::endl;
+      std::abort();
+    }
+    // set the combined solver parameters
+    if (solution_strategy != nullptr)
+    {
+      solution_strategy->cnvgTolerance = slvr.data[MICRO_CONVERGENCE_TOL];
+      solution_strategy->slvrTolerance = slvr.data[MICRO_SOLVER_TOL];
+      solution_strategy->oscPrms.maxIterations = slvr_int.data[MAX_MICRO_ITERS];
+      solution_strategy->oscPrms.maxMicroCutAttempts =
+          slvr_int.data[MAX_MICRO_CUT_ATTEMPT];
+      solution_strategy->oscPrms.microAttemptCutFactor =
+          slvr_int.data[MICRO_ATTEMPT_CUT_FACTOR];
+      solution_strategy->oscPrms.oscType =
+          static_cast<amsi::DetectOscillationType>(
+              slvr_int.data[DETECT_OSCILLATION_TYPE]);
+      solution_strategy->oscPrms.prevNormFactor = slvr.data[PREV_ITER_FACTOR];
+    }
+    return solution_strategy;
+  }
+}  // namespace mumfim

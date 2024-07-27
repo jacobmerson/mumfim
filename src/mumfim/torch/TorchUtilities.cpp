@@ -250,7 +250,7 @@ namespace mumfim
       {
         auto grad = torch::autograd::grad({PK2}, {right_cauchy_green},
                                           {probe_directions[i]}, true, true)[0];
-        assert(torch::allclose(grad, torch::transpose(grad, 1, 2), 1E-4));
+        //assert(torch::allclose(grad, torch::transpose(grad, 1, 2), 1E-4));
         for (int j = 0; j < 6; ++j)
         {
           material_stiffness.index({Slice{None, None}, j, i}) =

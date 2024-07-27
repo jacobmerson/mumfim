@@ -69,5 +69,14 @@ namespace amsi
     // numerical integration
     kt *= w * dV;
     Ke += kt;
+
+    // fe holds the residual vector, because of the incremental formulation
+    // In the case of heat sources the residual will be Ke*theta - rhs
+    apf::DynamicVector fe_ip(nedofs);
+    apf::DynamicVector displacement(field_values_.size());
+    std::copy(field_values_.begin(), field_values_.end(), &displacement[0]);
+    apf::multiply(kt, displacement, fe_ip);
+    // "includes body force" extension
+    fe -=  fe_ip;
   }
 }

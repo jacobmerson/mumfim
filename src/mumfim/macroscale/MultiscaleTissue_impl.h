@@ -20,7 +20,8 @@ namespace mumfim
         MicroscaleType prv = static_cast<MicroscaleType>(apf::getScalar(prv_rve,rgn,ip));
         // if the RVE is new
         if((crt == MicroscaleType::FIBER_ONLY && prv != MicroscaleType::FIBER_ONLY) ||
-           (crt == MicroscaleType::ISOTROPIC_NEOHOOKEAN && prv != MicroscaleType::ISOTROPIC_NEOHOOKEAN)
+           (crt == MicroscaleType::ISOTROPIC_NEOHOOKEAN && prv != MicroscaleType::ISOTROPIC_NEOHOOKEAN) ||
+           (crt == MicroscaleType::TORCH && prv != MicroscaleType::TORCH)
             || all) 
         {
           micro_fo_header hdr;
@@ -66,7 +67,7 @@ namespace mumfim
       else
       {
         mlm = apf::createMeshElement(prev_coords,rgn);
-        e = apf::createElement(delta_u,mlm);
+        e = apf::createElement(apf_primary_delta_field,mlm);
       }
       int ng = apf::countIntPoints(mlm,getOrder(mlm));
       for(int ip = 0; ip < ng; ++ip)

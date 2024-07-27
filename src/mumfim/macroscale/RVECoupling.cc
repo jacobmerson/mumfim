@@ -1,5 +1,7 @@
 #include "RVECoupling.h"
 #include <model_traits/AssociatedModelTraits.h>
+#include <fmt/format.h>
+
 namespace mumfim
 {
   MicroscaleType getMicroscaleType(
@@ -20,10 +22,14 @@ namespace mumfim
       {
         return MicroscaleType::FIBER_ONLY;
       }
+      else if (category_node->FindCategoryByType("torch") != nullptr)
+      {
+        return MicroscaleType::TORCH;
+      }
       else
       {
         std::cerr << "Multiscale model type is not a valid. Must be "
-                     "\"isotropic_neohookean\" or \"fiber only\".\n";
+                     "\"isotropic_neohookean\", \"fiber only\", or \"torch\".\n";
         MPI_Abort(AMSI_COMM_WORLD, 1);
       }
     }

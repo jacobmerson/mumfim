@@ -78,7 +78,7 @@ namespace amsi {
       mesh_coord_elem =
           apf::createElement(apf::getMesh(f)->getCoordinateField(), me);
     }
-    void atPoint(apf::Vector3 const&, double w, double)
+    void atPoint(apf::Vector3 const&, double w, double) override
     {
       int& nen = nenodes;  // = 4 (tets)
       // 1. Get coordinates on underlying mesh
@@ -110,7 +110,7 @@ namespace amsi {
       double detJ = getDeterminant(J);
       vol += w * detJ;
     }
-    void outElement()
+    void outElement() override
     {
       apf::destroyElement(mesh_coord_elem);
       ElementalSystem::outElement();
@@ -124,6 +124,7 @@ namespace amsi {
     {
     }
     void inElement(apf::MeshElement* me)
+    void inElement(apf::MeshElement* me) override
     {
       ElementalSystem::inElement(me);
       fs = apf::getShape(f);
@@ -133,7 +134,7 @@ namespace amsi {
        * Therefore we need to hardcode dim for now.. */
       dim = 3;
     }
-    void atPoint(apf::Vector3 const&, double, double)
+    void atPoint(apf::Vector3 const&, double, double) override
     {
       int& nen = nenodes;  // = 3 (triangle)
       // 1. Get coordinates on underlying mesh
@@ -168,8 +169,10 @@ namespace amsi {
       vol *= area / 3.0;
       vol *= 1.0 / 3.0;
     }
-    double getVol() { return vol; }
-    int getNormDir() { return norm_dir; }
+    [[nodiscard]]
+    double getVol() const noexcept { return vol; }
+    [[nodiscard]]
+    int getNormDir() const noexcept { return norm_dir; }
 
     private:
     int dim;

@@ -201,7 +201,7 @@ namespace amsi
     if (!includes_body_forces)
     {
       throw mumfim::mumfim_error(
-          "Integrator that does not bring int it's own body forces is no "
+          "Integrator that does not bring in it's own body forces is no "
           "longer supported");
     }
     const auto num_elemental_dofs = fe.size();
@@ -240,7 +240,6 @@ namespace amsi
       apf::MeshElement * mlm = apf::createMeshElement(coordinates, mesh_entity);
       auto * sys = getIntegrator(mesh_entity, 0);
       sys->process(mlm);
-
       AssembleDOFs(las, sys->getFieldNumbers(), sys->getFieldValues(),
                    sys->getKe(), sys->getfe(), sys->includesBodyForces(),
                    apf::countComponents(sys->getField()));
