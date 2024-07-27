@@ -1,6 +1,8 @@
 #ifndef MUMFIM_MULTISCALE_MICRO_FO_PARAMS_H_
 #define MUMFIM_MULTISCALE_MICRO_FO_PARAMS_H_
 #include <amsiMPI.h>
+#include <string>
+#include <array>
 namespace mumfim
 {
   enum class MicroscaleType
@@ -11,6 +13,14 @@ namespace mumfim
     ISOTROPIC_NEOHOOKEAN,
     TORCH,
     MICROSCALE_TYPE_COUNT
+  };
+  static const inline
+  std::array<std::string,5> microscale_type_strings = {
+      "none",
+      "fiber only",
+      "fiber matrix",
+      "isotropic_neohookean",
+      "torch"
   };
   // TODO move orientation tensor fields to own structs
   // fiber_reaction is obsolete, remove it

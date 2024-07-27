@@ -172,6 +172,9 @@ namespace mumfim
     {
       analysis_type = static_cast<MicroscaleType>(hdrs[0].data[RVE_TYPE]);
     }
+    // current implementation has same failure threshold for all RVEs
+    failure_stress_ = prms[0].data[FAILURE_STRESS];
+    damage_factor_ = prms[0].data[DAMAGE_FACTOR];
     for (std::size_t i = 0; i < to_add.size(); ++i)
     {
       micro_fo_header & hdr = hdrs[i];
@@ -284,6 +287,11 @@ namespace mumfim
                                                            hdrs.size());
       Kokkos::DualView<Scalar * [3]> orientation_tensor_normal(
           "orientation tensor normal", hdrs.size());
+      Kokkos::View<Scalar *, Kokkos::HostSpace> trial_damage("damage factor",
+                                                             hdrs.size());
+      Kokkos::View<Scalar *, Kokkos::HostSpace> accepted_damage("damage factor",
+                                                                hdrs.size());
+      Kokkos::deep_copy(accepted_damage, 1.0);
       // communicate the step results back to the macro scale
       if (macro_step == 0 && macro_iter == 0)
       {
@@ -300,6 +308,7 @@ namespace mumfim
         int step_accepted{0};
         while (!step_complete)
         {
+          Kokkos::deep_copy(trial_damage, accepted_damage);
           // migration
           // if (macro_iter == 0) updateCoupling();
           // send the initial microscale rve states back to the macroscale
@@ -315,6 +324,10 @@ namespace mumfim
           auto stress_h = stress.h_view;
           auto material_stiffness_h = material_stiffness.h_view;
           deformation_gradient.modify<Kokkos::HostSpace>();
+          for (size_t i = 0; i < trial_damage.size(); ++i)
+          {
+            trial_damage(i) *= damage_factor_;
+          }
           // fill the deformation gradient data
           for (std::size_t i = 0; i < results.size(); ++i)
           {
@@ -336,6 +349,7 @@ namespace mumfim
             double * sigma = &(results[i].data[0]);
             double * avgVolStress = &(results[i].data[6]);
             double * matStiffMatrix = &(results[i].data[9]);
+            results[i].data[45] = trial_damage(i);
             for (int j = 0; j < 6; ++j)
             {
               sigma[j] = stress_h(i, j);
@@ -361,40 +375,41 @@ namespace mumfim
           macro_iter++;
 
         cs->scaleBroadcast(M2m_id, &step_accepted);
-        step_complete = (step_accepted > 0);
-        if (step_accepted)
-        {
-          batched_analysis->accept();
+          step_complete = (step_accepted > 0);
+          if (step_accepted)
+          {
+            batched_analysis->accept();
+            Kokkos::deep_copy(accepted_damage, trial_damage);
+          }
         }
+        // get the size of the step results vector
+        std::vector<micro_fo_step_result> step_results(hdrs.size());
+        // recover step results and set the step results vector
+        recoverMultiscaleStepResults(
+            orientation_tensor, orientation_tensor_normal,
+            batched_analysis.get(), hdrs, prms, step_results);
+        // communicate the step results back to the macro scale
+        cs->Communicate(send_ptrn, step_results,
+                        amsi::mpi_type<micro_fo_step_result>());
+        macro_iter = 0;
+        macro_step++;
+        cs->scaleBroadcast(M2m_id, &sim_complete);
       }
-      // get the size of the step results vector
-      std::vector<micro_fo_step_result> step_results(hdrs.size());
-      // recover step results and set the step results vector
-      recoverMultiscaleStepResults(
-          orientation_tensor, orientation_tensor_normal, batched_analysis.get(),
-          hdrs, prms, step_results);
-      // communicate the step results back to the macro scale
-      cs->Communicate(send_ptrn, step_results,
-                      amsi::mpi_type<micro_fo_step_result>());
-      macro_iter = 0;
-      macro_step++;
-      cs->scaleBroadcast(M2m_id, &sim_complete);
     }
-  }
 
-  std::unique_ptr<MicroSolutionStrategy> serializeSolutionStrategy(
-      micro_fo_solver & slvr,
-      micro_fo_int_solver & slvr_int)
-  {
-    auto solver_type =
-        static_cast<SolverType>(slvr_int.data[MICRO_SOLVER_TYPE]);
-    auto solution_strategy = std::unique_ptr<MicroSolutionStrategy>{nullptr};
-    if (solver_type == SolverType::Explicit)
+    std::unique_ptr<MicroSolutionStrategy> serializeSolutionStrategy(
+        micro_fo_solver & slvr,
+        micro_fo_int_solver & slvr_int)
     {
-      solution_strategy.reset(new MicroSolutionStrategyExplicit);
-      auto sse =
-          static_cast<MicroSolutionStrategyExplicit *>(solution_strategy.get());
-      sse->total_time = slvr.data[LOAD_TIME] + slvr.data[HOLD_TIME];
+      auto solver_type =
+          static_cast<SolverType>(slvr_int.data[MICRO_SOLVER_TYPE]);
+      auto solution_strategy = std::unique_ptr<MicroSolutionStrategy>{nullptr};
+      if (solver_type == SolverType::Explicit)
+      {
+        solution_strategy.reset(new MicroSolutionStrategyExplicit);
+        auto sse = static_cast<MicroSolutionStrategyExplicit *>(
+            solution_strategy.get());
+        sse->total_time = slvr.data[LOAD_TIME] + slvr.data[HOLD_TIME];
       sse->load_time = slvr.data[LOAD_TIME];
       sse->crit_time_scale_factor = slvr.data[CRITICAL_TIME_SCALE_FACTOR];
       sse->visc_damp_coeff = slvr.data[VISCOUS_DAMPING_FACTOR];

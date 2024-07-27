@@ -49,6 +49,8 @@ namespace mumfim
     bool initial_update;
 
     std::string pt_file_;
+    double failure_stress_;
+    double damage_factor_;
     // funcs
     void initCoupling();
     void initAnalysis();

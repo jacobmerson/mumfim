@@ -20,6 +20,7 @@ namespace mumfim
                            apf::Field * strs,
                            apf::Field * u,
                            apf::Field * dfm_grd,
+                           apf::Field* damage_field,
                            apf::Numbering* numbering,
                            int o,
                            double minimum_stiffness)
@@ -29,6 +30,7 @@ namespace mumfim
         , strain_field(strn)
         , stress_field(strs)
         , dfm_grd_fld(dfm_grd)
+        , damage_field_(damage_field)
         , minimum_stiffness(minimum_stiffness)
     {
     }
@@ -170,6 +172,7 @@ namespace mumfim
           0.5 * (rightCauchyGreen(2, 2) - 1));
       apf::setMatrix(strain_field, m, current_integration_point, greenStrain);
       apf::setMatrix(stress_field, m, current_integration_point, Cauchy);
+      apf::setScalar(damage_field_, m , current_integration_point, rslt->data[45]);
       current_integration_point++;
     }
     int current_integration_point;
@@ -182,6 +185,7 @@ namespace mumfim
     apf::MeshElement * ref_lmnt;
     apf::Element * du_lmnt;
     apf::Field * dfm_grd_fld;
+    apf::Field * damage_field_;
     double minimum_stiffness;
   };
 }  // namespace mumfim
