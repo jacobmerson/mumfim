@@ -72,7 +72,8 @@ namespace mumfim
       MatAssemblyBegin(petsc_las->GetMatrix(), MAT_FINAL_ASSEMBLY);
       MatAssemblyEnd(petsc_las->GetMatrix(), MAT_FINAL_ASSEMBLY);
 
-      Vec rhs = petsc_las->GetVector(); 
+      // FIXME...THIS is broken for thermal / linear case
+      Vec rhs = petsc_las->GetVector();
       VecCopy(rhs, residual);
       //MatMultAdd(petsc_las->GetMatrix(), solution, rhs, residual);
 

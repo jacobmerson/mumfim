@@ -31,8 +31,8 @@ namespace mumfim
     apf_primary_field =
         apf::createLagrangeField(apf_mesh, "displacement", apf::VECTOR, 1);
     apf::zeroField(apf_primary_field);
-    apf_primary_delta_field = apf::createLagrangeField(apf_mesh, "displacement_delta",
-                                       apf::VECTOR, 1);
+    apf_primary_delta_field = apf::createLagrangeField(
+        apf_mesh, "displacement_delta", apf::VECTOR, 1);
     apf::zeroField(apf_primary_delta_field);
 
     accepted_displacements = apf::createLagrangeField(
@@ -132,7 +132,9 @@ namespace mumfim
       else if (continuum_model->GetType() == "linear_elastic")
       {
         constitutives[reinterpret_cast<apf::ModelEntity *>(gent)] =
-          std::make_unique<amsi::LinearElasticIntegrator>(apf_primary_field, apf_primary_numbering, 1, (*youngs_modulus)(), (*poisson_ratio)());
+            std::make_unique<amsi::LinearElasticIntegrator>(
+                apf_primary_field, apf_primary_numbering, 1,
+                (*youngs_modulus)(), (*poisson_ratio)());
       }
       else if (continuum_model->GetType() == "transverse_isotropic")
       {
@@ -229,12 +231,13 @@ namespace mumfim
         .run();
 
     std::vector<double> new_solution(num_dofs);
-    amsi::ToArray(apf_primary_numbering, apf_primary_field,
-                  &new_solution[0], first_local_dof, &wr_op)
+    amsi::ToArray(apf_primary_numbering, apf_primary_field, &new_solution[0],
+                  first_local_dof, &wr_op)
         .run();
-    std::transform(
-        old_solution.begin(), old_solution.end(), new_solution.begin(), old_solution.begin(),
-        [](double old_sol, double new_sol) { return new_sol - old_sol; });
+    std::transform(old_solution.begin(), old_solution.end(),
+                   new_solution.begin(), old_solution.begin(),
+                   [](double old_sol, double new_sol)
+                   { return new_sol - old_sol; });
 
     amsi::ApplyVector(apf_primary_numbering, apf_primary_delta_field,
                       old_solution.data(), first_local_dof, &wr_op)

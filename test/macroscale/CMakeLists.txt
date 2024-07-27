@@ -12,7 +12,6 @@ set(TEST_SOURCES
     ApfMatrixUtils.cc
     TestDeformations.cc
     TestSupport.cc
-    TestSupport.h
   )
 
 if(MUMFIM_ENABLE_Torch)

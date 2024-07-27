@@ -68,6 +68,7 @@ namespace mumfim
     // fe holds the residual vector, because of the incremental formulation
     // In the case of heat sources the residual will be Ke*theta - rhs
     apf::DynamicVector fe_ip(nedofs);
+    // FIXME This should be BT_D_B * Theta?
     apf::multiply(Ke, Theta, fe_ip); 
     fe -=  fe_ip;
   }

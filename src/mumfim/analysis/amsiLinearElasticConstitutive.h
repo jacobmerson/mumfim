@@ -12,11 +12,11 @@ namespace amsi
                             int o,
                             double E,
                             double v);
-    void atPoint(apf::Vector3 const &p,
-                 double w,
-                 double dV);
+  void atPoint(apf::Vector3 const & p, double w, double dV) override;
+
     bool includesBodyForces() override { return true; }
-  private:
+
+    private:
     apf::FieldShape * fs;
     apf::DynamicMatrix C;
   };

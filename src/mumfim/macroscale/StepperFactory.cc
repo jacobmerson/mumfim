@@ -30,7 +30,8 @@ namespace mumfim
     {
       std::cerr << R"("problem definition" must have "problem type" trait. Defaulting to NonlinearTissue)"<<std::endl;
     }
-    else {
+    else
+    {
       problem_type_index = (*problem_type_trait)();
     }
 

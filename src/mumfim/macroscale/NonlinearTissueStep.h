@@ -52,13 +52,15 @@ namespace mumfim
     NonlinearTissueStep(apf::Mesh* mesh, const mt::CategoryNode& analysis_case,
                     MPI_Comm cm = AMSI_COMM_SCALE);
     virtual ~NonlinearTissueStep();
-    void computeInitGuess(amsi::LAS* las) override;
+    void computeInitGuess(amsi::LAS * las) override;
     void step() override;
     void iter() override;
     void Assemble(amsi::LAS* las) override;
     void UpdateDOFs(const double* sol) override;
-    virtual void preRun() override {};
-    void AcceptDOFs() override {
+    virtual void preRun() override{};
+
+    void AcceptDOFs() override
+    {
       apf::copyData(accepted_displacements, getUField());
     }
 

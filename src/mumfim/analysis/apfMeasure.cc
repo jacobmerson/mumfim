@@ -123,7 +123,7 @@ namespace amsi {
         : ElementalSystem(field, numbering, o), dim(0), vol(0), norm_dir(normal_dir)
     {
     }
-    void inElement(apf::MeshElement* me)
+    bool includesBodyForces() override { std::cout<<"MEASURE DISPACE SURF BF\n"; return true; }
     void inElement(apf::MeshElement* me) override
     {
       ElementalSystem::inElement(me);

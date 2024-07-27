@@ -77,6 +77,6 @@ namespace amsi
     std::copy(field_values_.begin(), field_values_.end(), &displacement[0]);
     apf::multiply(kt, displacement, fe_ip);
     // "includes body force" extension
-    fe -=  fe_ip;
+    fe -= fe_ip;
   }
 }
