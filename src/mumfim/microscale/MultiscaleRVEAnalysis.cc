@@ -108,10 +108,12 @@ namespace mumfim
     cs->aRecvBroadcast(std::back_inserter(rqsts), M2m_id, &rve_tp_cnt[0],
                        num_rve_tps);
     int cnt = 0;
-    while ((cnt = cs->aRecvBroadcastSize<char>(M2m_id)) == 0) { }
+    while ((cnt = cs->aRecvBroadcastSize<char>(M2m_id)) == 0)
+    {
+    }
     // the string size does not include \0, but the send does include it
-    pt_file_.resize(cnt-1);
-      cs->aRecvBroadcast(std::back_inserter(rqsts), M2m_id, pt_file_.data(), cnt);
+    pt_file_.resize(cnt - 1);
+    cs->aRecvBroadcast(std::back_inserter(rqsts), M2m_id, pt_file_.data(), cnt);
     // assert(rqsts.size() == num_rve_tps);
     //  note rather than waiting for all of the communication, we can interleave
     //  creating some of the new structures with some of the communication
@@ -168,7 +170,7 @@ namespace mumfim
           "Inconsistent RVE types. Currently only Single RVE "
           "type supported with batched analysis mode");
     }
-    if(hdrs.size() > 0)
+    if (hdrs.size() > 0)
     {
       analysis_type = static_cast<MicroscaleType>(hdrs[0].data[RVE_TYPE]);
     }
@@ -246,7 +248,9 @@ namespace mumfim
 #ifdef MUMFIM_ENABLE_TORCH
           batched_analysis =
               std::make_unique<BatchedTorchAnalysis<>>(pt_file_, to_add.size());
-          std::cout<<fmt::format("Adding Torch Model with Name {} and {} RVEs\n", pt_file_, to_add.size());
+          std::cout << fmt::format(
+              "Adding Torch Model with Name {} and {} RVEs\n", pt_file_,
+              to_add.size());
 #else
           throw mumfim_error("Mumfim not compiled with torch support.");
 #endif
@@ -256,160 +260,160 @@ namespace mumfim
           throw mumfim_error("Invalid RVE type");
       }
     }
-      // reset the PCU communictor back to its original state so that
-      // our scale wide communications can proceed
-      PCU_Switch_Comm(comm);
-      cs->CommPattern_UpdateInverted(recv_ptrn, send_ptrn);
-      cs->CommPattern_Assemble(send_ptrn);
-      cs->CommPattern_Reconcile(send_ptrn);
-    }
-    void MultiscaleRVEAnalysis::run()
-    {
-      amsi::ControlService * cs = amsi::ControlService::Instance();
-      if (macro_step == 0 && macro_iter == 0)
-      {
-        updateCoupling();
-      }
-      else
-      {
-        std::cerr << "Very surprised that I am here!\n";
-        std::abort();
-      }
-      // send the initial step result data to the macroscale to output
-      // get the size of the step results vector
-      std::vector<micro_fo_step_result> step_results(hdrs.size());
-      Kokkos::DualView<Scalar * [3][3]> deformation_gradient(
-          "deformation gradient", hdrs.size());
-      Kokkos::DualView<Scalar * [6]> stress("stress", hdrs.size());
-      Kokkos::DualView<Scalar * [6][6]> material_stiffness("material stiffness",
-                                                           hdrs.size());
-      Kokkos::DualView<Scalar * [3][3]> orientation_tensor("orientation tensor",
-                                                           hdrs.size());
-      Kokkos::DualView<Scalar * [3]> orientation_tensor_normal(
-          "orientation tensor normal", hdrs.size());
-      Kokkos::View<Scalar *, Kokkos::HostSpace> trial_damage("damage factor",
-                                                             hdrs.size());
-      Kokkos::View<Scalar *, Kokkos::HostSpace> accepted_damage("damage factor",
-                                                                hdrs.size());
-      Kokkos::deep_copy(accepted_damage, 1.0);
-      // communicate the step results back to the macro scale
-      if (macro_step == 0 && macro_iter == 0)
-      {
-        recoverMultiscaleStepResults(
-            orientation_tensor, orientation_tensor_normal,
-            batched_analysis.get(), hdrs, prms, step_results);
-        cs->Communicate(send_ptrn, step_results,
-                        amsi::mpi_type<micro_fo_step_result>());
-      }
-      bool sim_complete{false};
-      while (!sim_complete)
-      {
-        bool step_complete{false};
-        int step_accepted{0};
-        while (!step_complete)
-        {
-          Kokkos::deep_copy(trial_damage, accepted_damage);
-          // migration
-          // if (macro_iter == 0) updateCoupling();
-          // send the initial microscale rve states back to the macroscale
-          std::vector<micro_fo_data> data;
-          cs->Communicate(recv_ptrn, data, amsi::mpi_type<micro_fo_data>());
-          std::vector<micro_fo_result> results(data.size());
-          PCU_Switch_Comm(MPI_COMM_SELF);
-          int rank = -1;
-          MPI_Comm_rank(AMSI_COMM_WORLD, &rank);
-          // int ii = 0;
-          MUMFIM_V1(double t0 = MPI_Wtime();)
-          auto deformation_gradient_h = deformation_gradient.h_view;
-          auto stress_h = stress.h_view;
-          auto material_stiffness_h = material_stiffness.h_view;
-          deformation_gradient.modify<Kokkos::HostSpace>();
-          for (size_t i = 0; i < trial_damage.size(); ++i)
-          {
-            trial_damage(i) *= damage_factor_;
-          }
-          // fill the deformation gradient data
-          for (std::size_t i = 0; i < results.size(); ++i)
-          {
-            for (int ei = 0; ei < 3; ++ei)
-            {
-              for (int ej = 0; ej < 3; ++ej)
-              {
-                deformation_gradient_h(i, ei, ej) = data[i].data[ei * 3 + ej];
-              }
-            }
-          }
-          batched_analysis->run(deformation_gradient, stress);
-          batched_analysis->computeMaterialStiffness(material_stiffness);
-          stress.sync<Kokkos::HostSpace>();
-          material_stiffness.sync<Kokkos::HostSpace>();
-          // fill the results data
-          for (std::size_t i = 0; i < results.size(); ++i)
-          {
-            double * sigma = &(results[i].data[0]);
-            double * avgVolStress = &(results[i].data[6]);
-            double * matStiffMatrix = &(results[i].data[9]);
-            results[i].data[45] = trial_damage(i);
-            for (int j = 0; j < 6; ++j)
-            {
-              sigma[j] = stress_h(i, j);
-            }
-            // avg vol stress which we don't currently use
-            for (int j = 0; j < 3; ++j)
-            {
-              avgVolStress[j] = 0;
-            }
-            for (int j = 0; j < 36; ++j)
-            {
-              int row = (j) / 6;
-              int col = (j) % 6;
-              matStiffMatrix[j] = material_stiffness_h(i, row, col);
-            }
-          }
-          MUMFIM_V1(double t1 = MPI_Wtime();)
-          MUMFIM_V1(std::cout << "Computed " << results.size() << " RVEs in "
-                              << t1 - t0 << " seconds. On rank " << rank << "."
-                              << std::endl;)
-          cs->Communicate(send_ptrn, results,
-                          amsi::mpi_type<micro_fo_result>());
-          macro_iter++;
+    // reset the PCU communictor back to its original state so that
+    // our scale wide communications can proceed
+    PCU_Switch_Comm(comm);
+    cs->CommPattern_UpdateInverted(recv_ptrn, send_ptrn);
+    cs->CommPattern_Assemble(send_ptrn);
+    cs->CommPattern_Reconcile(send_ptrn);
+  }
 
-        cs->scaleBroadcast(M2m_id, &step_accepted);
-          step_complete = (step_accepted > 0);
-          if (step_accepted)
+  void MultiscaleRVEAnalysis::run()
+  {
+    amsi::ControlService * cs = amsi::ControlService::Instance();
+    if (macro_step == 0 && macro_iter == 0)
+    {
+      updateCoupling();
+    }
+    else
+    {
+      std::cerr << "Very surprised that I am here!\n";
+      std::abort();
+    }
+    // send the initial step result data to the macroscale to output
+    // get the size of the step results vector
+    std::vector<micro_fo_step_result> step_results(hdrs.size());
+    Kokkos::DualView<Scalar * [3][3]> deformation_gradient(
+        "deformation gradient", hdrs.size());
+    Kokkos::DualView<Scalar * [6]> stress("stress", hdrs.size());
+    Kokkos::DualView<Scalar * [6][6]> material_stiffness("material stiffness",
+                                                         hdrs.size());
+    Kokkos::DualView<Scalar * [3][3]> orientation_tensor("orientation tensor",
+                                                         hdrs.size());
+    Kokkos::DualView<Scalar * [3]> orientation_tensor_normal(
+        "orientation tensor normal", hdrs.size());
+    Kokkos::View<Scalar *, Kokkos::HostSpace> trial_damage("damage factor",
+                                                           hdrs.size());
+    Kokkos::View<Scalar *, Kokkos::HostSpace> accepted_damage("damage factor",
+                                                              hdrs.size());
+    Kokkos::deep_copy(accepted_damage, 1.0);
+    // communicate the step results back to the macro scale
+    if (macro_step == 0 && macro_iter == 0)
+    {
+      recoverMultiscaleStepResults(
+          orientation_tensor, orientation_tensor_normal, batched_analysis.get(),
+          hdrs, prms, step_results);
+      cs->Communicate(send_ptrn, step_results,
+                      amsi::mpi_type<micro_fo_step_result>());
+    }
+    bool sim_complete{false};
+    while (!sim_complete)
+    {
+      bool step_complete{false};
+      int step_accepted{0};
+      while (!step_complete)
+      {
+        Kokkos::deep_copy(trial_damage, accepted_damage);
+        // migration
+        // if (macro_iter == 0) updateCoupling();
+        // send the initial microscale rve states back to the macroscale
+        std::vector<micro_fo_data> data;
+        cs->Communicate(recv_ptrn, data, amsi::mpi_type<micro_fo_data>());
+        std::vector<micro_fo_result> results(data.size());
+        PCU_Switch_Comm(MPI_COMM_SELF);
+        int rank = -1;
+        MPI_Comm_rank(AMSI_COMM_WORLD, &rank);
+        // int ii = 0;
+        MUMFIM_V1(double t0 = MPI_Wtime();)
+        auto deformation_gradient_h = deformation_gradient.h_view;
+        auto stress_h = stress.h_view;
+        auto material_stiffness_h = material_stiffness.h_view;
+        deformation_gradient.modify<Kokkos::HostSpace>();
+        for (size_t i = 0; i < trial_damage.size(); ++i)
+        {
+          trial_damage(i) *= damage_factor_;
+        }
+        // fill the deformation gradient data
+        for (std::size_t i = 0; i < results.size(); ++i)
+        {
+          for (int ei = 0; ei < 3; ++ei)
           {
-            batched_analysis->accept();
-            Kokkos::deep_copy(accepted_damage, trial_damage);
+            for (int ej = 0; ej < 3; ++ej)
+            {
+              deformation_gradient_h(i, ei, ej) = data[i].data[ei * 3 + ej];
+            }
           }
         }
-        // get the size of the step results vector
-        std::vector<micro_fo_step_result> step_results(hdrs.size());
-        // recover step results and set the step results vector
-        recoverMultiscaleStepResults(
-            orientation_tensor, orientation_tensor_normal,
-            batched_analysis.get(), hdrs, prms, step_results);
-        // communicate the step results back to the macro scale
-        cs->Communicate(send_ptrn, step_results,
-                        amsi::mpi_type<micro_fo_step_result>());
-        macro_iter = 0;
-        macro_step++;
-        cs->scaleBroadcast(M2m_id, &sim_complete);
-      }
-    }
+        batched_analysis->run(deformation_gradient, stress);
+        batched_analysis->computeMaterialStiffness(material_stiffness);
+        stress.sync<Kokkos::HostSpace>();
+        material_stiffness.sync<Kokkos::HostSpace>();
+        // fill the results data
+        for (std::size_t i = 0; i < results.size(); ++i)
+        {
+          double * sigma = &(results[i].data[0]);
+          double * avgVolStress = &(results[i].data[6]);
+          double * matStiffMatrix = &(results[i].data[9]);
+          results[i].data[45] = trial_damage(i);
+          for (int j = 0; j < 6; ++j)
+          {
+            sigma[j] = stress_h(i, j);
+          }
+          // avg vol stress which we don't currently use
+          for (int j = 0; j < 3; ++j)
+          {
+            avgVolStress[j] = 0;
+          }
+          for (int j = 0; j < 36; ++j)
+          {
+            int row = (j) / 6;
+            int col = (j) % 6;
+            matStiffMatrix[j] = material_stiffness_h(i, row, col);
+          }
+        }
+        MUMFIM_V1(double t1 = MPI_Wtime();)
+        MUMFIM_V1(std::cout << "Computed " << results.size() << " RVEs in "
+                            << t1 - t0 << " seconds. On rank " << rank << "."
+                            << std::endl;)
+        cs->Communicate(send_ptrn, results, amsi::mpi_type<micro_fo_result>());
+        macro_iter++;
 
-    std::unique_ptr<MicroSolutionStrategy> serializeSolutionStrategy(
-        micro_fo_solver & slvr,
-        micro_fo_int_solver & slvr_int)
+        cs->scaleBroadcast(M2m_id, &step_accepted);
+        step_complete = (step_accepted > 0);
+        if (step_accepted)
+        {
+          batched_analysis->accept();
+          Kokkos::deep_copy(accepted_damage, trial_damage);
+        }
+      }
+      // get the size of the step results vector
+      std::vector<micro_fo_step_result> step_results(hdrs.size());
+      // recover step results and set the step results vector
+      recoverMultiscaleStepResults(
+          orientation_tensor, orientation_tensor_normal, batched_analysis.get(),
+          hdrs, prms, step_results);
+      // communicate the step results back to the macro scale
+      cs->Communicate(send_ptrn, step_results,
+                      amsi::mpi_type<micro_fo_step_result>());
+      macro_iter = 0;
+      macro_step++;
+      cs->scaleBroadcast(M2m_id, &sim_complete);
+    }
+  }
+
+  std::unique_ptr<MicroSolutionStrategy> serializeSolutionStrategy(
+      micro_fo_solver & slvr,
+      micro_fo_int_solver & slvr_int)
+  {
+    auto solver_type =
+        static_cast<SolverType>(slvr_int.data[MICRO_SOLVER_TYPE]);
+    auto solution_strategy = std::unique_ptr<MicroSolutionStrategy>{nullptr};
+    if (solver_type == SolverType::Explicit)
     {
-      auto solver_type =
-          static_cast<SolverType>(slvr_int.data[MICRO_SOLVER_TYPE]);
-      auto solution_strategy = std::unique_ptr<MicroSolutionStrategy>{nullptr};
-      if (solver_type == SolverType::Explicit)
-      {
-        solution_strategy.reset(new MicroSolutionStrategyExplicit);
-        auto sse = static_cast<MicroSolutionStrategyExplicit *>(
-            solution_strategy.get());
-        sse->total_time = slvr.data[LOAD_TIME] + slvr.data[HOLD_TIME];
+      solution_strategy.reset(new MicroSolutionStrategyExplicit);
+      auto sse =
+          static_cast<MicroSolutionStrategyExplicit *>(solution_strategy.get());
+      sse->total_time = slvr.data[LOAD_TIME] + slvr.data[HOLD_TIME];
       sse->load_time = slvr.data[LOAD_TIME];
       sse->crit_time_scale_factor = slvr.data[CRITICAL_TIME_SCALE_FACTOR];
       sse->visc_damp_coeff = slvr.data[VISCOUS_DAMPING_FACTOR];
