@@ -25,6 +25,21 @@
 #endif
 namespace mumfim
 {
+
+  static void calculateUpdatedDamageFactor(double failure_stress, double damage_factor,
+    const Kokkos::View<Scalar * [6]> & stress, const Kokkos::View<Scalar*> & accepted_damage,
+    const Kokkos::View<Scalar*> & trial_damage)
+  {
+    auto von_mises = computeVonMisesStress(stress);
+    Kokkos::parallel_for("Calculate Updated Damage Factor",
+      Kokkos::RangePolicy<>(0, trial_damage.size()),
+      KOKKOS_LAMBDA(const int i) {
+            trial_damage(i) = von_mises(i) > failure_stress
+                                  ? accepted_damage(i) * damage_factor
+                                  : accepted_damage(i);
+      });
+  }
+
   MultiscaleRVEAnalysis::~MultiscaleRVEAnalysis() = default;
 
   MultiscaleRVEAnalysis::MultiscaleRVEAnalysis(
@@ -292,9 +307,10 @@ namespace mumfim
                                                          hdrs.size());
     Kokkos::DualView<Scalar * [3]> orientation_tensor_normal(
         "orientation tensor normal", hdrs.size());
-    Kokkos::View<Scalar *, Kokkos::HostSpace> trial_damage("damage factor",
+    Kokkos::View<Scalar *> trial_damage("damage factor",
                                                            hdrs.size());
-    Kokkos::View<Scalar *, Kokkos::HostSpace> accepted_damage("damage factor",
+    auto trial_damage_h = Kokkos::create_mirror_view(trial_damage);
+    Kokkos::View<Scalar *> accepted_damage("damage factor",
                                                               hdrs.size());
     Kokkos::deep_copy(accepted_damage, 1.0);
     // communicate the step results back to the macro scale
@@ -313,7 +329,6 @@ namespace mumfim
       int step_accepted{0};
       while (!step_complete)
       {
-        Kokkos::deep_copy(trial_damage, accepted_damage);
         // migration
         // if (macro_iter == 0) updateCoupling();
         // send the initial microscale rve states back to the macroscale
@@ -329,10 +344,6 @@ namespace mumfim
         auto stress_h = stress.h_view;
         auto material_stiffness_h = material_stiffness.h_view;
         deformation_gradient.modify<Kokkos::HostSpace>();
-        for (size_t i = 0; i < trial_damage.size(); ++i)
-        {
-          trial_damage(i) *= damage_factor_;
-        }
         // fill the deformation gradient data
         for (std::size_t i = 0; i < results.size(); ++i)
         {
@@ -346,15 +357,19 @@ namespace mumfim
         }
         batched_analysis->run(deformation_gradient, stress);
         batched_analysis->computeMaterialStiffness(material_stiffness);
+        calculateUpdatedDamageFactor(failure_stress_, damage_factor_, stress.d_view, accepted_damage,
+                                     trial_damage);
+        batched_analysis->updateDamageFactor(trial_damage);
         stress.sync<Kokkos::HostSpace>();
         material_stiffness.sync<Kokkos::HostSpace>();
+        Kokkos::deep_copy(trial_damage_h, trial_damage);
         // fill the results data
         for (std::size_t i = 0; i < results.size(); ++i)
         {
           double * sigma = &(results[i].data[0]);
           double * avgVolStress = &(results[i].data[6]);
           double * matStiffMatrix = &(results[i].data[9]);
-          results[i].data[45] = trial_damage(i);
+          results[i].data[45] = trial_damage_h(i);
           for (int j = 0; j < 6; ++j)
           {
             sigma[j] = stress_h(i, j);

@@ -77,6 +77,7 @@ namespace mumfim
     ElementDataType current_length;
     // Only deal with fiber networks with uniform material properties
     PackedScalarType fiber_elastic_modulus;
+    PackedScalarType original_fiber_elastic_modulus;
     PackedScalarType fiber_area;
     PackedScalarType fiber_density;
     PackedScalarType viscous_damping_coefficient;
@@ -237,6 +238,8 @@ namespace mumfim
             fiber_elastic_modulus.template getRow<HostMemorySpace>(i);
         fiber_elastic_modulus_row(0) =
             fiber_networks[i]->getFiberReaction(0).getYoungModulus();
+        original_fiber_elastic_modulus.template getRow<HostMemorySpace>(i)(0) =
+            fiber_networks[i]->getFiberReaction(0).getYoungModulus();
         auto fiber_area_row = fiber_area.template getRow<HostMemorySpace>(i);
         fiber_area_row(0) =
             fiber_networks[i]->getFiberReaction(0).getFiberArea();
@@ -314,6 +317,7 @@ namespace mumfim
                                   current_deformation_gradient_,
                                   trial_deformation_gradient_);
       }
+
       // if we aren't "updating coords" we are doing a finite difference and
       // that should make use of the last state, not the accepted state!
       else
@@ -466,6 +470,14 @@ namespace mumfim
     }
     auto GetStrainEnergy() {
       return strain_energy;
+    }
+    void updateDamageFactor(Kokkos::View<Scalar*> damage_factor) override
+    {
+        assert(damage_factor.extent(0) == original_fiber_elastic_modulus.getNumRows());
+        Kokkos::parallel_for(damage_factor.extent(0), KOKKOS_LAMBDA(int i) {
+            auto original_modulus_d = original_fiber_elastic_modulus.template getRow<DeviceMemorySpace>(i);
+            fiber_elastic_modulus.template getRow<DeviceMemorySpace>(i)(0) = original_modulus_d(0) * damage_factor(i);
+        });
     }
 
     private:

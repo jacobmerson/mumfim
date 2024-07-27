@@ -6,6 +6,7 @@
 #include <mumfim/microscale/ContinuumMechanics.h>
 #include <mumfim/torch/TorchUtilities.h>
 #include <torch/script.h>
+#include <KokkosBlas1_scal.hpp>
 
 #include <Kokkos_Core.hpp>
 
@@ -25,9 +26,11 @@ namespace mumfim
     BatchedTorchAnalysis(const std::string & model_path, int nrves)
         : BatchedRVEAnalysis<Scalar, LocalOrdinal, ExeSpace>(nrves),
           F_trial_("F_trial", nrves), stiffness_trial_("stiffness_trial", nrves),
-          F_current_("F_current", nrves)
+          F_current_("F_current", nrves),
+          damage_factor_("damage_factor", nrves)
     {
       FillIdentity(F_current_);
+      Kokkos::deep_copy(damage_factor_, 1.0);
       try
       {
         model_ = torch::jit::load(model_path);
@@ -66,6 +69,16 @@ namespace mumfim
                                            right_cauchy_green_[0].toTensor());
       ml::TorchArrayToKokkosView(cauchy_stress, sigma.template view<ExeSpace>());
       ml::TorchArrayToKokkosView(stiffness, stiffness_trial_);
+
+      // multiply stress an stiffness by damage
+      //KokkosBlas::scal(stiffness_trial_, damage_factor_, stiffness_trial_);
+      KokkosBlas::scal(sigma.d_view, damage_factor_, sigma.d_view);
+      // since stiffness is 3D, need to do team loop...
+      Kokkos::MDRangePolicy policy({0,0,0},{stiffness_trial_.extent(0),stiffness_trial_.extent(1),stiffness_trial_.extent(2)});
+      Kokkos::parallel_for(policy,
+                           KOKKOS_LAMBDA(const int i, const int j, const int k) {
+                             stiffness_trial_(i, j,k) *= damage_factor_(i);
+                           });
       sigma.template modify<ExeSpace>();
 
       return true;
@@ -85,6 +98,10 @@ namespace mumfim
       KOKKOS_ASSERT(C.extent(0) == this->num_rves_);
       Kokkos::deep_copy(C.template view<ExeSpace>(), stiffness_trial_);
     }
+    void updateDamageFactor(Kokkos::View<Scalar*> damage_factor) override
+    {
+      Kokkos::deep_copy(damage_factor_, damage_factor);
+    }
 
     private:
     using LO = LocalOrdinal;
@@ -96,6 +113,7 @@ namespace mumfim
 
     // current deformation gradient that is updated after each accept
     Kokkos::View<Scalar * [3][3], ExeSpace> F_current_;
+    Kokkos::View<Scalar* > damage_factor_;
 
     torch::jit::script::Module model_;
 

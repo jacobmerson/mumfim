@@ -56,6 +56,9 @@ namespace mumfim
       Kokkos::deep_copy(omega.h_view, 0);
     }
     size_t GetNumRVEs() const { return this->num_rves_; }
+
+    virtual void updateDamageFactor(Kokkos::View<Scalar*> damage_factor) {}
+
     // RVEAnalysis(const RVEAnalysis & an);
     // RVEAnalysis();
   };
