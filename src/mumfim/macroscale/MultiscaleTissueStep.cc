@@ -2,7 +2,6 @@
 
 #include <amsiControlService.h>  // amsi
 #include <amsiDetectOscillation.h>
-#include <fmt/format.h>
 #include <model_traits/AssociatedModelTraits.h>
 
 #include <map>
@@ -498,8 +497,7 @@ namespace mumfim
             multiscale_model, "file");
         if (torch_file == nullptr)
         {
-          throw mumfim_error(
-              fmt::format("torch material model requires a file (string MT)"));
+          throw mumfim_error("torch material model requires a file (string MT)");
         }
         pt_file_ = torch_file ? (*torch_file)() : "";
       }

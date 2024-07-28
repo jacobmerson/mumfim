@@ -33,6 +33,7 @@ set(analysis_src_files
 # Add the library to create
 add_library(analysis ${analysis_src_files})
 add_library(mumfim::analysis ALIAS analysis)
+target_link_libraries(analysis PUBLIC MPI::MPI_CXX)
 
 # properties for downstream packages
 target_include_directories(analysis PUBLIC

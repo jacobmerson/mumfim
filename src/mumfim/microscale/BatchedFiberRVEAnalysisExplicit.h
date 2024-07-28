@@ -474,10 +474,14 @@ namespace mumfim
     }
     void updateDamageFactor(Kokkos::View<Scalar*> damage_factor) override
     {
+        //local copies of arrays to avoid this capture
+        auto original_em = original_fiber_elastic_modulus;
+        auto elastic_modulus = fiber_elastic_modulus;
+
         assert(damage_factor.extent(0) == original_fiber_elastic_modulus.getNumRows());
         Kokkos::parallel_for(damage_factor.extent(0), KOKKOS_LAMBDA(int i) {
-            auto original_modulus_d = original_fiber_elastic_modulus.template getRow<DeviceMemorySpace>(i);
-            fiber_elastic_modulus.template getRow<DeviceMemorySpace>(i)(0) = original_modulus_d(0) * damage_factor(i);
+            auto original_modulus_d = original_em.template getRow<DeviceMemorySpace>(i);
+            elastic_modulus.template getRow<DeviceMemorySpace>(i)(0) = original_modulus_d(0) * damage_factor(i);
         });
     }
 

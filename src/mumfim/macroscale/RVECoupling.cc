@@ -1,6 +1,5 @@
 #include "RVECoupling.h"
 #include <model_traits/AssociatedModelTraits.h>
-#include <fmt/format.h>
 
 namespace mumfim
 {
