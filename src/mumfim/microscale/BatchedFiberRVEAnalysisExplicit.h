@@ -207,6 +207,7 @@ namespace mumfim
       current_length = ElementDataType(element_counts);
       // currently there is only one material property,
       fiber_elastic_modulus = PackedScalarType(material_counts);
+      original_fiber_elastic_modulus = PackedScalarType(material_counts);
       fiber_area = PackedScalarType(material_counts);
       fiber_density = PackedScalarType(material_counts);
       viscous_damping_coefficient = PackedScalarType(material_counts);

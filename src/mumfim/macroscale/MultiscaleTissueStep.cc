@@ -120,22 +120,14 @@ namespace mumfim
           }
         });
 
-    auto * microscale_stress =
-        apf::createIPField(apf_mesh, "microscale_stress", apf::MATRIX, 1);
-    auto * microscale_strain =
-        apf::createIPField(apf_mesh, "microscale_strain", apf::MATRIX, 1);
-    auto * microscale_dfm_grd =
-        apf::createIPField(apf_mesh, "microscale_F", apf::MATRIX, 1);
-    apf::zeroField(microscale_stress);
-    apf::zeroField(microscale_strain);
-    apf::zeroField(microscale_dfm_grd);
-    auto* damage = apf::createIPField(apf_mesh, "damage", apf::SCALAR, 1);
+    auto * damage = apf::createIPField(apf_mesh, "damage", apf::SCALAR, 1);
     apf::zeroField(damage);
     ornt_3D = apf::createIPField(apf_mesh, "ornt_tens_3D", apf::MATRIX, 1);
     ornt_2D = apf::createIPField(apf_mesh, "ornt_tens_2D", apf::MATRIX, 1);
     mltscl = new ULMultiscaleIntegrator(
-        &fo_cplg, microscale_strain, microscale_stress, apf_primary_field,
-        microscale_dfm_grd, damage, apf_primary_numbering, 1, minimum_stiffness);
+        &fo_cplg, this->strn, this->strs, apf_primary_field,
+        this->dfm_grd, damage, apf_primary_numbering, 1,
+        minimum_stiffness);
     M2m_id =
         amsi::getRelationID(multiscale_.getMultiscaleManager(),
                             multiscale_.getScaleManager(), "macro", "micro_fo");
@@ -436,7 +428,9 @@ namespace mumfim
         MPI_Abort(AMSI_COMM_WORLD, 1);
       }
       auto micro_tp = getMicroscaleType(multiscale_model);
-      multiscale_model = GetCategoryByType(multiscale_model, microscale_type_strings[static_cast<int>(micro_tp)]);
+      multiscale_model = GetCategoryByType(
+          multiscale_model,
+          microscale_type_strings[static_cast<int>(micro_tp)]);
       const auto * stochastic_field =
           multiscale_model->FindCategoryByType("stochastic field");
       if (micro_tp == MicroscaleType::FIBER_ONLY)
@@ -500,8 +494,8 @@ namespace mumfim
       }
       else if (micro_tp == MicroscaleType::TORCH)
       {
-        const auto * torch_file =
-            mt::GetCategoryModelTraitByType<mt::StringMT>(multiscale_model, "file");
+        const auto * torch_file = mt::GetCategoryModelTraitByType<mt::StringMT>(
+            multiscale_model, "file");
         if (torch_file == nullptr)
         {
           throw mumfim_error(
@@ -536,17 +530,24 @@ namespace mumfim
 
     // get damage
     const auto * damage_cat = multiscale_model->FindCategoryByType("damage");
+    prm.data[DAMAGE_FACTOR] = 1.0;
+    prm.data[FAILURE_STRESS] = -1.0;
     if (damage_cat != nullptr)
     {
       const auto * damage_factor =
-          mt::GetCategoryModelTraitByType<mt::ScalarMT>(damage_cat, "damage factor");
-      assert(damage_factor != nullptr);
-      prm.data[DAMAGE_FACTOR] = (damage_factor == nullptr) ? 1.0 : (*damage_factor)();
+          mt::GetCategoryModelTraitByType<mt::ScalarMT>(damage_cat,
+                                                        "damage factor");
+      if (damage_factor != nullptr)
+      {
+        prm.data[DAMAGE_FACTOR] = (*damage_factor)();
+      }
       const auto * failure_stress =
           mt::GetCategoryModelTraitByType<mt::ScalarMT>(damage_cat,
                                                         "failure stress");
-      assert(failure_stress != nullptr);
-        prm.data[FAILURE_STRESS] = (failure_stress == nullptr) ? -1.0 : (*failure_stress)();
+      if (failure_stress != nullptr)
+      {
+        prm.data[FAILURE_STRESS] = (*failure_stress)();
+      }
     }
     if (micro_tp == MicroscaleType::FIBER_ONLY)
     {

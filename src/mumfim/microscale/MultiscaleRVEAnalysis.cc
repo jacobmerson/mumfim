@@ -275,6 +275,7 @@ namespace mumfim
           throw mumfim_error("Invalid RVE type");
       }
     }
+    assert(batched_analysis != nullptr);
     // reset the PCU communictor back to its original state so that
     // our scale wide communications can proceed
     PCU_Switch_Comm(comm);
@@ -357,9 +358,12 @@ namespace mumfim
         }
         batched_analysis->run(deformation_gradient, stress);
         batched_analysis->computeMaterialStiffness(material_stiffness);
-        calculateUpdatedDamageFactor(failure_stress_, damage_factor_, stress.d_view, accepted_damage,
-                                     trial_damage);
-        batched_analysis->updateDamageFactor(trial_damage);
+        if(failure_stress_ > 0)
+        {
+          calculateUpdatedDamageFactor(failure_stress_, damage_factor_, stress.d_view, accepted_damage,
+                                       trial_damage);
+          batched_analysis->updateDamageFactor(trial_damage);
+        }
         stress.sync<Kokkos::HostSpace>();
         material_stiffness.sync<Kokkos::HostSpace>();
         Kokkos::deep_copy(trial_damage_h, trial_damage);
