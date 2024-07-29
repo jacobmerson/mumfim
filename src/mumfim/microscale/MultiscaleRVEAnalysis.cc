@@ -358,12 +358,6 @@ namespace mumfim
         }
         batched_analysis->run(deformation_gradient, stress);
         batched_analysis->computeMaterialStiffness(material_stiffness);
-        if(failure_stress_ > 0)
-        {
-          calculateUpdatedDamageFactor(failure_stress_, damage_factor_, stress.d_view, accepted_damage,
-                                       trial_damage);
-          batched_analysis->updateDamageFactor(trial_damage);
-        }
         stress.sync<Kokkos::HostSpace>();
         material_stiffness.sync<Kokkos::HostSpace>();
         Kokkos::deep_copy(trial_damage_h, trial_damage);
@@ -402,9 +396,16 @@ namespace mumfim
         if (step_accepted)
         {
           batched_analysis->accept();
-          Kokkos::deep_copy(accepted_damage, trial_damage);
         }
       }
+      // update damage on step completion
+      if(failure_stress_ > 0)
+      {
+        calculateUpdatedDamageFactor(failure_stress_, damage_factor_, stress.d_view, accepted_damage,
+                                     trial_damage);
+        batched_analysis->updateDamageFactor(trial_damage);
+      }
+      Kokkos::deep_copy(accepted_damage, trial_damage);
       // get the size of the step results vector
       std::vector<micro_fo_step_result> step_results(hdrs.size());
       // recover step results and set the step results vector
