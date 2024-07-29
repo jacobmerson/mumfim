@@ -278,6 +278,7 @@ namespace mumfim
       original_coordinates.template modify<HostMemorySpace>();
       nodal_mass.template modify<HostMemorySpace>();
       fiber_elastic_modulus.template modify<HostMemorySpace>();
+      original_fiber_elastic_modulus.template modify<HostMemorySpace>();
       fiber_area.template modify<HostMemorySpace>();
       fiber_density.template modify<HostMemorySpace>();
       viscous_damping_coefficient.template modify<HostMemorySpace>();
@@ -474,6 +475,8 @@ namespace mumfim
     }
     void updateDamageFactor(Kokkos::View<Scalar*> damage_factor) override
     {
+        original_fiber_elastic_modulus.template sync<ExeSpace>();
+        fiber_elastic_modulus.template sync<ExeSpace>();
         //local copies of arrays to avoid this capture
         auto original_em = original_fiber_elastic_modulus;
         auto elastic_modulus = fiber_elastic_modulus;
@@ -483,6 +486,7 @@ namespace mumfim
             auto original_modulus_d = original_em.template getRow<DeviceMemorySpace>(i);
             elastic_modulus.template getRow<DeviceMemorySpace>(i)(0) = original_modulus_d(0) * damage_factor(i);
         });
+        fiber_elastic_modulus.template modify<ExeSpace>();
     }
 
     private:
