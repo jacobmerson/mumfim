@@ -33,9 +33,10 @@ namespace mumfim
     auto von_mises = computeVonMisesStress(stress);
     Kokkos::parallel_for("Calculate Updated Damage Factor",
       Kokkos::RangePolicy<>(0, trial_damage.size()),
+      // TODO: get the minimum threshold from the macroscale/input file
       KOKKOS_LAMBDA(const int i) {
             trial_damage(i) = von_mises(i) > failure_stress
-                                  ? accepted_damage(i) * damage_factor
+                                  ? Kokkos::max(accepted_damage(i) * damage_factor, 0.1)
                                   : accepted_damage(i);
       });
   }
