@@ -1,0 +1,56 @@
+model traits:
+  name: macro
+  cases:
+    - case name: thermal
+      model traits:
+        default geometry type: dimension id
+        problem definition:
+          macro:
+            problem type:
+              - name: problem type
+                type: int
+                value: 11
+                geometry: ~
+            material model:
+              - category name: solid_material
+                continuum model:
+                  isotropic_neohookean:
+                    kappa:
+                      - name: kappa
+                        type: scalar
+                        value: 1.0
+                        geometry: [[3, 1]]
+            heat_flux:
+              - category name: top
+                flux:
+                  - name: magnitude
+                    type: scalar
+                    value: 1.0
+                    geometry: [[2, 1]]
+            temperature:
+              - category name: bottom
+                T:
+                  - name: magnitude
+                    type: scalar
+                    value: 1.0
+                    geometry: [[2, 5]]
+        solution strategy:
+          macro:
+            num timesteps:
+              - name: num timesteps
+                type: int
+                value: 1
+                geometry: ~
+            load balancing:
+              - name: load balancing
+                type: int
+                value: -2
+                geometry: ~
+        output:
+          - category name: Results
+            macro:
+              results directory:
+                - name: results
+                  type: string
+                  value: Results
+                  geometry: ~

@@ -3,13 +3,15 @@
 #include "LinearTissueStep.h"
 #include "NonlinearTissueStep.h"
 #include "MultiscaleTissueStep.h"
+#include "EffectiveKappaEvaluator.h"
 
 namespace mumfim
 {
  amsi::FEAStep * createStepper(
       apf::Mesh * mesh,
       const mt::CategoryNode & analysis_case,
-      MPI_Comm com
+      MPI_Comm com,
+      std::string ktf
   )
   {
     amsi::FEAStep *stepper = nullptr;
@@ -35,6 +37,9 @@ namespace mumfim
     }
 
     switch(problem_type_index){
+      case(10):
+        stepper = new EffectiveKappaEvaluator(mesh, analysis_case, ktf, com);
+        break;
       case(11):
         stepper = new LinearHeatConductionStep(mesh, analysis_case, com);
         break;

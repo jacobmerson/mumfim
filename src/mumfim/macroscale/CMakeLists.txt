@@ -1,5 +1,6 @@
 set(biotissue_src_files
         Analysis.cc
+        EffectiveKappaEvaluator.cc
         LinearHeatIntegrator.cc
         LinearHeatConductionStep.cc
         LinearTissueStep.cc
@@ -11,8 +12,10 @@ set(biotissue_src_files
         StiffnessVariation.cc
         FEMAnalysis.cc
         MultiscaleTissueAnalysis.cc
+        PropertyEvaluation.cc
         SinglescaleTissueAnalysis.cc
         StepperFactory.cc
+        ThermalStiffnessIntegrator.cc
         UpdatedLagrangianMaterialIntegrator.cc
         UpdatedLagrangianMaterialIntegrator.h
         materials/NeoHookean.cc
@@ -28,6 +31,8 @@ if (NOT ${BUILD_EXTERNAL})
     find_package(amsi COMPONENTS util analysis multiscale)
 endif ()
 
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
 add_library(biotissue ${biotissue_src_files})
 
 target_link_libraries(biotissue
@@ -36,7 +41,10 @@ target_link_libraries(biotissue
         amsi::util
         mumfim::analysis
         amsi::multiscale
-        amsi::amsi)
+        amsi::amsi
+        LAPACK::LAPACK
+        BLAS::BLAS
+        )
 
 if (MUMFIM_ENABLE_Torch)
     target_link_libraries(biotissue PUBLIC ${TORCH_LIBRARIES})
