@@ -391,8 +391,19 @@ namespace amsi {
                        const mt::AssociatedModelTraits<mt::DimIdGeometry>& bcs,
                        const std::vector<NeumannBCEntry>& bc_paths, double t)
   {
-    std::unordered_map<NeumannBCType, std::unique_ptr<NeumannIntegratorMT>>
-        integrators;
+    
+    // key_type entries: <model_dim, model_tag, bc_type>
+    typedef const std::tuple<size_t, size_t, amsi::NeumannBCType> key_type;
+    struct hash_cache{
+      size_t operator()(key_type & x)
+      const {
+          size_t type = static_cast<size_t>(std::get<2>(x));
+          return (std::get<0>(x) << 32) ^ (std::get<1>(x) << 16) ^ type;
+      }
+    };
+
+    std::unordered_map<key_type, std::unique_ptr<NeumannIntegratorMT>, hash_cache>
+        integrators_cache;
     apf::Field* fld = apf::getField(nm);
     apf::Mesh* mesh = apf::getMesh(nm);
     for (int dimension = 0; dimension < mesh->getDimension(); ++dimension) {
@@ -427,20 +438,24 @@ namespace amsi {
           }
           const auto& bc_name = path.mt_name;
           auto* bc = mt::GetCategoryModelTraitByType(nd, bc_name);
+          NeumannIntegratorMT *integrator;
           if (bc != nullptr) {
-            NeumannIntegratorMT* integrator;
-            auto* mnt = apf::createMeshElement(mesh, e);
             auto integrator_type = path.mt_type;
-            auto rslt = integrators.find(integrator_type);
-            if (rslt == integrators.end()) {
-              auto r = integrators.emplace(
-                  integrator_type,
-                  createNeumannIntegrator(las, fld, bc, 1, t, integrator_type));
-              integrator = r.first->second.get();
+            key_type cache_key(model_dim, model_tag, integrator_type);
+            auto search = integrators_cache.find(cache_key);
+            if(search != integrators_cache.end())
+            {
+              integrator = search->second.get();
+            } else
+            {
+            integrator =
+                  integrators_cache.emplace(
+                    cache_key,
+                    createNeumannIntegrator(las, fld, bc, 1, t, integrator_type)
+                  ).first->second.get();
             }
-            else {
-              integrator = rslt->second.get();
-            }
+
+            auto* mnt = apf::createMeshElement(mesh, e);
             integrator->process(mnt);
             apf::NewArray<int> dofs;
             apf::getElementNumbers(nm, e, dofs);
